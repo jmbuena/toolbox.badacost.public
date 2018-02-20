@@ -7,6 +7,10 @@ This repo has a modified version of [Piotr Dollar toolbox](http://vision.ucsd.ed
    Pattern Recognition, Elsevier. In press, 2018.
    [DOI:10.1016/j.patcog.2018.02.022](https://doi.org/10.1016/j.patcog.2018.02.022)
 
+ 
+   [![Youtube Video](https://img.youtube.com/vi/r6aNMm4ruFI/0.jpg)](https://youtu.be/r6aNMm4ruFI)
+   [![Youtube Video](https://img.youtube.com/vi/uT8yPt2a5EE/0.jpg)](https://youtu.be/uT8yPt2a5EE)
+
 
 # Replicate paper experiments or simply use our trained classifiers.
 
