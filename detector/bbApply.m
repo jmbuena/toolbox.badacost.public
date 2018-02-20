@@ -261,7 +261,7 @@ for i=1:size(bb,1), p=bb(i,1:4);
 end
 end
 
-function hs = drawMulticlass( bb, col, lw, ls, prop, ids )
+function hs = drawMulticlass( bb, col, lw, ls, prop, ids, showScore, showClass )
 % Draw single or multiple bbs to image (calls rectangle()).
 %
 % To draw bbs aligned with pixel boundaries, subtract .5 from the x and y
@@ -277,6 +277,8 @@ function hs = drawMulticlass( bb, col, lw, ls, prop, ids )
 %  ls     - ['-'] LineStyle for rectangle
 %  prop   - [] other properties for rectangle
 %  ids    - [ones(1,n)] id in [1,k] for each bb into colors array
+%  showScore - [1]
+%  showClass - [1]
 %
 % OUTPUT
 %  hs     - [nx1] handles to drawn rectangles (and labels)
@@ -291,6 +293,8 @@ if(nargin<3 || isempty(lw)), lw=2; end
 if(nargin<4 || isempty(ls)), ls='-'; end
 if(nargin<5 || isempty(prop)), prop={}; end
 if(nargin<6 || isempty(ids)), ids=ones(1,n); end
+if(nargin<7 || isempty(showScore)), showScore = 1; end
+if(nargin<8 || isempty(showClass)), showClass = 1; end
 % prepare display properties
 prop=['LineWidth' lw 'LineStyle' ls prop 'EdgeColor'];
 tProp={'FontSize',12,'color','y','FontWeight','bold',...
@@ -300,19 +304,22 @@ if(size(col,1)<k), ids=ones(1,n); end; hs=zeros(1,n);
 % draw rectangles and optionally labels
 for b=1:n, hs(b)=rectangle('Position',bb(b,1:4),prop{:},col(ids(b),:)); end
 if(m==4), return; end; hs=[hs zeros(1,n)];
-for b=1:n
-    hs(b+n)=text(bb(b,1),bb(b,2),num2str(bb(b,5),4),tProp{:});  
+if (showScore)
+  for b=1:n
+    hs(b+n)=text(bb(b,1),bb(b,2),num2str(bb(b,5),2),tProp{:});  
+  end
 end
 tProp={'FontSize',12,'color','y','FontWeight','bold',...
   'VerticalAlignment','top'}; k=max(ids);
-for b=1:n
-  if size(bb,2)>=7
-    hs(b+2*n)=text(bb(b,1),bb(b,2)+bb(b,4),num2str(bb(b,7)),tProp{:}); 
-  elseif size(bb,2)==6
-    hs(b+2*n)=text(bb(b,1),bb(b,2)+bb(b,4),num2str(bb(b,6)),tProp{:}); 
+if (showClass)
+  for b=1:n
+    if size(bb,2)>=7
+      hs(b+2*n)=text(bb(b,1),bb(b,2)+bb(b,4),num2str(bb(b,7)),tProp{:}); 
+    elseif size(bb,2)==6
+      hs(b+2*n)=text(bb(b,1),bb(b,2)+bb(b,4),num2str(bb(b,6)),tProp{:}); 
+    end;
   end;
 end;
-
 end
 
 function hs = draw( bb, col, lw, ls, prop, ids )
@@ -475,7 +482,8 @@ for i=1:n, [patches{i},bbs(i,1:4)]=crop1(bbs(i,1:4)); end
       patch = I(lcsS(1):lcsE(1),lcsS(2):lcsE(2),:);
     end
     bb = [lcsS([2 1]) lcsE([2 1])-lcsS([2 1])+1];
-    if(~isempty(dims)), patch=imResample(patch,[dims(2),dims(1)]); end
+%    if(~isempty(dims)), patch=imResample(patch,[dims(2),dims(1)]); end
+    if(~isempty(dims)), patch=imresize(patch,[dims(2),dims(1)]); end
   end
 end
 

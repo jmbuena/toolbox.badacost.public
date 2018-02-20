@@ -709,7 +709,10 @@ if ~isMulticlass
   if(isempty(gt0)), gt0=zeros(0,5); end
   if(isempty(dt0)), dt0=zeros(0,5); end
   assert( size(dt0,2)==5 ); 
-  assert( size(gt0,2)==5 ); 
+  if(size(gt0,2)==6) 
+    gt0 = gt0(:,1:5);
+  end
+  assert( size(gt0,2)==5 );
 else
   if(isempty(gt0)), gt0=zeros(0,6); end
   if(isempty(dt0)), dt0=zeros(0,6); end
@@ -785,6 +788,8 @@ function [hs,hImg] = showRes( I, gt, dt, varargin )
 %   .dtLs       - ['--'] line style for dt bbs
 %   .lw         - [3] line width
 %   .isMulticlass - [0]
+%   .showScore - [1]
+%   .showClass - [1]
 %
 % OUTPUTS
 %  hs         - handles to bbs and text labels
@@ -794,8 +799,9 @@ function [hs,hImg] = showRes( I, gt, dt, varargin )
 %
 % See also bbGt, bbGt>evalRes
 dfs={'evShow',1,'gtShow',1,'dtShow',1,'cols','krg',...
-  'gtLs','-','dtLs','--','lw',3, 'isMulticlass', 0};
-[evShow,gtShow,dtShow,cols,gtLs,dtLs,lw,isMulticlass]=getPrmDflt(varargin,dfs,1);
+  'gtLs','-','dtLs','--','lw',3, 'isMulticlass', 0, ...
+  'showScore', 1, 'showClass', 1};
+[evShow,gtShow,dtShow,cols,gtLs,dtLs,lw,isMulticlass,showScore,showClass]=getPrmDflt(varargin,dfs,1);
 % optionally display image
 if(ischar(I)), I=imread(I); end
 if(~isempty(I)), hImg=im(I,[],0); title(''); end
@@ -807,7 +813,7 @@ if( evShow )
     for i=1:size(gt,1)
       k=k+1;
       if isMulticlass
-         hs{k}=bbApply('drawMulticlass',gt(i,1:4),cols(gt(i,5)+2),lw,gtLs);
+         hs{k}=bbApply('drawMulticlass',gt(i,1:4),cols(gt(i,5)+2),lw,gtLs, [], [], showScore, showClass);
       else
          hs{k}=bbApply('draw',gt(i,1:4),cols(gt(i,5)+2),lw,gtLs); 
       end; 
@@ -817,7 +823,7 @@ if( evShow )
      for i=1:size(dt,1) 
       k=k+1;
       if isMulticlass
-        hs{k}=bbApply('drawMulticlass',dt(i,:),cols(dt(i,6)+2),lw,dtLs); 
+        hs{k}=bbApply('drawMulticlass',dt(i,:),cols(dt(i,6)+2),lw,dtLs, [], [], showScore, showClass); 
       else
         hs{k}=bbApply('draw',dt(i,1:5),cols(dt(i,6)+2),lw,dtLs); 
       end;
@@ -825,9 +831,9 @@ if( evShow )
   end;
 else
   if isMulticlass
-    if(gtShow), k=k+1; hs{k}=bbApply('drawMulticlass',gt(:,1:4),cols(3),lw,gtLs); end
+    if(gtShow), k=k+1; hs{k}=bbApply('drawMulticlass',gt(:,1:4),cols(3),lw,gtLs, [], [], showScore, showClass); end
 %    if(dtShow), k=k+1; hs{k}=bbApply('drawMulticlass',dt(:,1:6),cols(3),lw,dtLs); end
-    if(dtShow), k=k+1; hs{k}=bbApply('drawMulticlass',dt,cols(3),lw,dtLs); end
+    if(dtShow), k=k+1; hs{k}=bbApply('drawMulticlass',dt,cols(3),lw,dtLs, [], [], showScore, showClass); end
   else
     if(gtShow), k=k+1; hs{k}=bbApply('draw',gt(:,1:4),cols(3),lw,gtLs); end
     if(dtShow), k=k+1; hs{k}=bbApply('draw',dt,cols(3),lw,dtLs); end
