@@ -1,6 +1,6 @@
 # Multi-class object detection with BAdaCost.
 
-This repo has a modified version of [Piotr Dollar toolbox](http://vision.ucsd.edu/~pdollar/toolbox/doc/) (Matlab and C++ code) to replicate the experiments we made for our Cost-Sensitive Multiclass algorithm paper. If you use this code for your own researh, **you must reference our journal paper**:
+This repo has a modified version of [Piotr Dollar toolbox](http://vision.ucsd.edu/~pdollar/toolbox/doc/) (Matlab and C++ code) to replicate the experiments we made for our Cost-Sensitive Multiclass algorithm paper. **If you use this code for your own research, you must reference our journal paper**:
   
    **BAdaCost: Multi-class Boosting with Costs.**
    Antonio Fernández-Baldera, José M. Buenaposada, and Luis Baumela.
