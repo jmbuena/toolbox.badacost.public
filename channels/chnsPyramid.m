@@ -22,7 +22,7 @@ function pyramid = chnsPyramid( I, varargin )
 % can be used to approximate feature responses at nearby scales. The
 % approximation is accurate at least within an entire scale octave. For
 % details and to understand why this unexpected result holds, please see:
-%   P. Dollár, R. Appel, S. Belongie and P. Perona
+%   P. Dollï¿½r, R. Appel, S. Belongie and P. Perona
 %   "Fast Feature Pyramids for Object Detection", PAMI 2014.
 %
 % The parameter "nApprox" determines how many intermediate scales are
@@ -123,7 +123,8 @@ if( ~isfield(p,'complete') || p.complete~=1 || isempty(I) )
   if(p.nApprox<0), p.nApprox=p.nPerOct-1; end
 end
 if(nargin==0), pyramid=p; return; end; pPyramid=p;
-vs=struct2cell(p); [pChns,nPerOct,nOctUp,nApprox,lambdas,...
+vs=struct2cell(p); 
+[pChns,nPerOct,nOctUp,nApprox,lambdas,...
   pad,minDs,smooth,concat,~]=deal(vs{:}); shrink=pChns.shrink;
 
 % convert I to appropriate color space (or simply normalize)

@@ -253,9 +253,66 @@ function bbr = squarify( bb, flag, ar )
 if(nargin<3 || isempty(ar)), ar=1; end; bbr=bb;
 if(flag==4), bbr=resize(bb,0,0,ar); return; end
 for i=1:size(bb,1), p=bb(i,1:4);
-  usew = (flag==0 && p(3)>p(4)*ar) || (flag==1 && p(3)<p(4)*ar) || flag==2;
+  %usew = ((flag==0) && (p(3)>p(4)*ar)) || ((flag==1) && (p(3)<p(4)*ar)) || (flag==2);
+  usew = ((flag==0) && (p(3)>p(4)*ar));
+  usew = usew || ((flag==1) && (p(3)<p(4)*ar));
+  usew = usew ||  (flag==2);
   if(usew), p=resize(p,0,1,ar); else p=resize(p,1,0,ar); end; bbr(i,1:4)=p;
 end
+end
+
+function hs = drawMulticlass( bb, col, lw, ls, prop, ids )
+% Draw single or multiple bbs to image (calls rectangle()).
+%
+% To draw bbs aligned with pixel boundaries, subtract .5 from the x and y
+% coordinates (since pixel centers are located at integer locations).
+%
+% USAGE
+%  hs = bbApply( 'drawMulticlass', bb, [col], [lw], [ls], [prop], [ids] )
+%
+% INPUTS
+%  bb     - [nx4] standard bbs or [nx5] weighted bbs or [nx6] with subclass.
+%  col    - ['g'] color or [kx1] array of colors
+%  lw     - [2] LineWidth for rectangle
+%  ls     - ['-'] LineStyle for rectangle
+%  prop   - [] other properties for rectangle
+%  ids    - [ones(1,n)] id in [1,k] for each bb into colors array
+%
+% OUTPUT
+%  hs     - [nx1] handles to drawn rectangles (and labels)
+%
+% EXAMPLE
+%  im(rand(3)); bbApply('draw',[1.5 1.5 1 1 .5],'g');
+%
+% See also bbApply, bbApply>embed, rectangle
+[n,m]=size(bb); if(n==0), hs=[]; return; end
+if(nargin<2 || isempty(col)), col=[]; end
+if(nargin<3 || isempty(lw)), lw=2; end
+if(nargin<4 || isempty(ls)), ls='-'; end
+if(nargin<5 || isempty(prop)), prop={}; end
+if(nargin<6 || isempty(ids)), ids=ones(1,n); end
+% prepare display properties
+prop=['LineWidth' lw 'LineStyle' ls prop 'EdgeColor'];
+tProp={'FontSize',12,'color','y','FontWeight','bold',...
+  'VerticalAlignment','bottom'}; k=max(ids);
+if(isempty(col)), if(k==1), col='g'; else col=hsv(k); end; end
+if(size(col,1)<k), ids=ones(1,n); end; hs=zeros(1,n);
+% draw rectangles and optionally labels
+for b=1:n, hs(b)=rectangle('Position',bb(b,1:4),prop{:},col(ids(b),:)); end
+if(m==4), return; end; hs=[hs zeros(1,n)];
+for b=1:n
+    hs(b+n)=text(bb(b,1),bb(b,2),num2str(bb(b,5),4),tProp{:});  
+end
+tProp={'FontSize',12,'color','y','FontWeight','bold',...
+  'VerticalAlignment','top'}; k=max(ids);
+for b=1:n
+  if size(bb,2)>=7
+    hs(b+2*n)=text(bb(b,1),bb(b,2)+bb(b,4),num2str(bb(b,7)),tProp{:}); 
+  elseif size(bb,2)==6
+    hs(b+2*n)=text(bb(b,1),bb(b,2)+bb(b,4),num2str(bb(b,6)),tProp{:}); 
+  end;
+end;
+
 end
 
 function hs = draw( bb, col, lw, ls, prop, ids )

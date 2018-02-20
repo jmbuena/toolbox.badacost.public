@@ -6,6 +6,7 @@
 #include "mex.h"
 #include <vector>
 #include <cmath>
+#include <iostream>
 using namespace std;
 
 typedef unsigned int uint32;
@@ -20,6 +21,7 @@ inline void getChild( float *chns1, uint32 *cids, uint32 *fids,
 
 void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[] )
 {
+  //cout << "acfDetect1.cpp: 1=============================" << endl;
   // get inputs
   float *chns = (float*) mxGetData(prhs[0]);
   mxArray *trees = (mxArray*) prhs[1];
@@ -29,6 +31,8 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[] )
   const int stride = (int) mxGetScalar(prhs[5]);
   const float cascThr = (float) mxGetScalar(prhs[6]);
 
+  //cout << "acfDetect1.cpp: 2=============================" << endl;
+
   // extract relevant fields from trees
   float *thrs = (float*) mxGetData(mxGetField(trees,0,"thrs"));
   float *hs = (float*) mxGetData(mxGetField(trees,0,"hs"));
@@ -36,6 +40,8 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[] )
   uint32 *child = (uint32*) mxGetData(mxGetField(trees,0,"child"));
   const int treeDepth = mxGetField(trees,0,"treeDepth")==NULL ? 0 :
     (int) mxGetScalar(mxGetField(trees,0,"treeDepth"));
+  
+  //cout << "acfDetect1.cpp: 3=============================" << endl;
 
   // get dimensions and constants
   const mwSize *chnsSize = mxGetDimensions(prhs[0]);
@@ -48,6 +54,8 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[] )
   const int height1 = (int) ceil(float(height*shrink-modelHt+1)/stride);
   const int width1 = (int) ceil(float(width*shrink-modelWd+1)/stride);
 
+  //cout << "acfDetect1.cpp: 4=============================" << endl;
+ 
   // construct cids array
   int nFtrs = modelHt/shrink*modelWd/shrink*nChns;
   uint32 *cids = new uint32[nFtrs]; int m=0;
@@ -55,6 +63,8 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[] )
     for( int c=0; c<modelWd/shrink; c++ )
       for( int r=0; r<modelHt/shrink; r++ )
         cids[m++] = z*width*height + c*height + r;
+
+  // cout << "acfDetect1.cpp: 5=============================" << endl;
 
   // apply classifier to each patch
   vector<int> rs, cs; vector<float> hs1;
@@ -97,8 +107,12 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[] )
     }
     if(h>cascThr) { cs.push_back(c); rs.push_back(r); hs1.push_back(h); }
   }
+  // cout << "acfDetect1.cpp: 6=============================" << endl;
+
   delete [] cids; m=cs.size();
 
+  // cout << "acfDetect1.cpp: 7=============================" << endl;
+  
   // convert to bbs
   plhs[0] = mxCreateNumericMatrix(m,5,mxDOUBLE_CLASS,mxREAL);
   double *bbs = (double*) mxGetData(plhs[0]);
@@ -107,4 +121,6 @@ void mexFunction( int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[] )
     bbs[i+1*m]=rs[i]*stride; bbs[i+3*m]=modelHt;
     bbs[i+4*m]=hs1[i];
   }
+  
+  // cout << "acfDetect1.cpp: 8=============================" << endl;
 }

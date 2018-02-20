@@ -7,6 +7,7 @@
 #include <math.h>
 #include "string.h"
 #include "sse.hpp"
+#include <iostream>
 
 #define PI 3.14159265f
 
@@ -152,11 +153,11 @@ void gradHist( float *M, float *O, float *H, int h, int w,
   float *H0, *H1, *M0, *M1; int x, y; int *O0, *O1; float xb, init;
   O0=(int*)alMalloc(h*sizeof(int),16); M0=(float*) alMalloc(h*sizeof(float),16);
   O1=(int*)alMalloc(h*sizeof(int),16); M1=(float*) alMalloc(h*sizeof(float),16);
+
   // main loop
   for( x=0; x<w0; x++ ) {
     // compute target orientation bins for entire column - very fast
     gradQuantize(O+x*h,M+x*h,O0,O1,M0,M1,nb,h0,sInv2,nOrients,full,softBin>=0);
-
     if( softBin<0 && softBin%2==0 ) {
       // no interpolation w.r.t. either orienation or spatial bin
       H1=H+(x/bin)*hb;
@@ -167,7 +168,6 @@ void gradHist( float *M, float *O, float *H, int h, int w,
       else if( bin==4 ) for(y=0; y<h0;) { GH; GH; GH; GH; H1++; }
       else for( y=0; y<h0;) { for( int y1=0; y1<bin; y1++ ) { GH; } H1++; }
       #undef GH
-
     } else if( softBin%2==0 || bin==1 ) {
       // interpolate w.r.t. orientation only, not spatial bin
       H1=H+(x/bin)*hb;
@@ -178,7 +178,6 @@ void gradHist( float *M, float *O, float *H, int h, int w,
       else if( bin==4 ) for(y=0; y<h0;) { GH; GH; GH; GH; H1++; }
       else for( y=0; y<h0;) { for( int y1=0; y1<bin; y1++ ) { GH; } H1++; }
       #undef GH
-
     } else {
       // interpolate using trilinear interpolation
       float ms[4], xyd, yb, xd, yd; __m128 _m, _m0, _m1;
@@ -312,14 +311,17 @@ void fhog( float *M, float *O, float *H, int h, int w, int binSize,
   hogChannels( H+nbo*0, R1, N, hb, wb, nOrients*2, clip, 1 );
   hogChannels( H+nbo*2, R2, N, hb, wb, nOrients*1, clip, 1 );
   hogChannels( H+nbo*3, R1, N, hb, wb, nOrients*2, clip, 2 );
-  wrFree(N); mxFree(R1); wrFree(R2);
+  // Change from toolbox v3.5
+//  wrFree(N); mxFree(R1); wrFree(R2);
+  wrFree(N); wrFree(R1); wrFree(R2);
 }
 
 /******************************************************************************/
 #ifdef MATLAB_MEX_FILE
 // Create [hxwxd] mxArray array, initialize to 0 if c=true
-mxArray* mxCreateMatrix3( int h, int w, int d, mxClassID id, bool c, void **I ){
-  const int dims[3]={h,w,d}, n=h*w*d; int b; mxArray* M;
+mxArray* mxCreateMatrix3( mwSize h, mwSize w, mwSize d, mxClassID id, bool c, void **I ){
+  //const size_t dims[3]={size_t(h),size_t(w),size_t(d)}, n=h*w*d; int b; mxArray* M;
+  const mwSize dims[3]={h,w,d}, n=h*w*d; int b; mxArray* M;
   if( id==mxINT32_CLASS ) b=sizeof(int);
   else if( id==mxDOUBLE_CLASS ) b=sizeof(double);
   else if( id==mxSINGLE_CLASS ) b=sizeof(float);
@@ -331,9 +333,10 @@ mxArray* mxCreateMatrix3( int h, int w, int d, mxClassID id, bool c, void **I ){
 
 // Check inputs and outputs to mex, retrieve first input I
 void checkArgs( int nl, mxArray *pl[], int nr, const mxArray *pr[], int nl0,
-  int nl1, int nr0, int nr1, int *h, int *w, int *d, mxClassID id, void **I )
+  int nl1, int nr0, int nr1, mwSize *h, mwSize *w, mwSize *d, mxClassID id, void **I )
 {
-  const int *dims; int nDims;
+//  const size_t *dims; int nDims;
+  const mwSize *dims; int nDims;
   if( nl<nl0 || nl>nl1 ) mexErrMsgTxt("Incorrect number of outputs.");
   if( nr<nr0 || nr>nr1 ) mexErrMsgTxt("Incorrect number of inputs.");
   nDims = mxGetNumberOfDimensions(pr[0]); dims = mxGetDimensions(pr[0]);
@@ -344,7 +347,8 @@ void checkArgs( int nl, mxArray *pl[], int nr, const mxArray *pr[], int nl0,
 
 // [Gx,Gy] = grad2(I) - see gradient2.m
 void mGrad2( int nl, mxArray *pl[], int nr, const mxArray *pr[] ) {
-  int h, w, d; float *I, *Gx, *Gy;
+  //int h, w, d; float *I, *Gx, *Gy;
+  mwSize h, w, d; float *I, *Gx, *Gy;
   checkArgs(nl,pl,nr,pr,1,2,1,1,&h,&w,&d,mxSINGLE_CLASS,(void**)&I);
   if(h<2 || w<2) mexErrMsgTxt("I must be at least 2x2.");
   pl[0]= mxCreateMatrix3( h, w, d, mxSINGLE_CLASS, 0, (void**) &Gx );
@@ -354,7 +358,9 @@ void mGrad2( int nl, mxArray *pl[], int nr, const mxArray *pr[] ) {
 
 // [M,O] = gradMag( I, channel, full ) - see gradientMag.m
 void mGradMag( int nl, mxArray *pl[], int nr, const mxArray *pr[] ) {
-  int h, w, d, c, full; float *I, *M, *O=0;
+//  int h, w, d, c, full; float *I, *M, *O=0;
+  mwSize h, w, d;
+  int c, full; float *I, *M, *O=0;
   checkArgs(nl,pl,nr,pr,1,2,3,3,&h,&w,&d,mxSINGLE_CLASS,(void**)&I);
   if(h<2 || w<2) mexErrMsgTxt("I must be at least 2x2.");
   c = (int) mxGetScalar(pr[1]); full = (int) mxGetScalar(pr[2]);
@@ -366,7 +372,8 @@ void mGradMag( int nl, mxArray *pl[], int nr, const mxArray *pr[] ) {
 
 // gradMagNorm( M, S, norm ) - operates on M - see gradientMag.m
 void mGradMagNorm( int nl, mxArray *pl[], int nr, const mxArray *pr[] ) {
-  int h, w, d; float *M, *S, norm;
+  //int h, w, d; float *M, *S, norm;
+  mwSize h, w, d; float *M, *S, norm;
   checkArgs(nl,pl,nr,pr,0,0,3,3,&h,&w,&d,mxSINGLE_CLASS,(void**)&M);
   if( mxGetM(pr[1])!=h || mxGetN(pr[1])!=w || d!=1 ||
     mxGetClassID(pr[1])!=mxSINGLE_CLASS ) mexErrMsgTxt("M or S is bad.");
@@ -376,7 +383,9 @@ void mGradMagNorm( int nl, mxArray *pl[], int nr, const mxArray *pr[] ) {
 
 // H=gradHist(M,O,[...]) - see gradientHist.m
 void mGradHist( int nl, mxArray *pl[], int nr, const mxArray *pr[] ) {
-  int h, w, d, hb, wb, nChns, binSize, nOrients, softBin, useHog;
+  //int h, w, d, hb, wb, nChns, binSize, nOrients, softBin, useHog;
+  mwSize h, w, d, hb, wb;
+  int nChns, binSize, nOrients, softBin, useHog;
   bool full; float *M, *O, *H, clipHog;
   checkArgs(nl,pl,nr,pr,1,3,2,8,&h,&w,&d,mxSINGLE_CLASS,(void**)&M);
   O = (float*) mxGetPr(pr[1]);

@@ -2,7 +2,7 @@ function chns = chnsCompute( I, varargin )
 % Compute channel features at a single scale given an input image.
 %
 % Compute the channel features as described in:
-%  P. Dollár, Z. Tu, P. Perona and S. Belongie
+%  P. Dollï¿½r, Z. Tu, P. Perona and S. Belongie
 %  "Integral Channel Features", BMVC 2009.
 % Channel features have proven very effective in sliding window object
 % detection, both in terms of *accuracy* and *speed*. Numerous feature

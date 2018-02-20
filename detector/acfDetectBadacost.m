@@ -1,4 +1,4 @@
-function bbs = acfDetect( I, detector, fileName )
+function [bbs, labels] = acfDetectBadacost( I, detector, fileName) 
 % Run aggregate channel features object detector on given image(s).
 %
 % The input 'I' can either be a single image (or filename) or a cell array
@@ -17,15 +17,17 @@ function bbs = acfDetect( I, detector, fileName )
 % bbType=j, where j is the j-th detector, see bbNms.m for details.
 %
 % USAGE
-%  bbs = acfDetect( I, detector, [fileName] )
+%  bbs = acfDetectBadacostTrees( I, detector, [fileName] )
 %
 % INPUTS
 %  I          - input image(s) of filename(s) of input image(s)
-%  detector   - detector(s) trained via acfTrain
+%  detector   - detector(s) trained via acfTrainBadacostTrees
 %  fileName   - [] target filename (if specified return is 1)
 %
 % OUTPUTS
-%  bbs        - [nx5] array of bounding boxes or cell array of bbs
+%  bbs        - [nx5] array of bounding boxes or cell array of bbsc
+%  labels     - [nx1] array of subclass labels (for example orientation
+%                     class in car detection
 %
 % EXAMPLE
 %
@@ -37,11 +39,11 @@ function bbs = acfDetect( I, detector, fileName )
 
 % run detector on every image
 if(nargin<3), fileName=''; end; multiple=iscell(I);
+if(nargin<4), aRatio=[]; end; 
 if(~isempty(fileName) && exist(fileName,'file')), bbs=1; return; end
-if(~multiple), bbs=acfDetectImg(I,detector); else
-  n=length(I); bbs=cell(n,1);
-  for i=1:n, disp(I{i}), bbs{i}=acfDetectImg(I{i},detector); end
-  %parfor i=1:n, disp(I{i}), bbs{i}=acfDetectImg(I{i},detector); end
+if(~multiple), [bbs, labels]=acfDetectImgBadacost(I,detector); else
+  n=length(I); bbs=cell(n,1); labels=cell(n,1);
+  parfor i=1:n, [bbs{i}, labels{i}]=acfDetectImgBadacost(I{i},detector); disp(i); end
 end
 
 % write results to disk if fileName specified
@@ -49,37 +51,18 @@ if(isempty(fileName)), return; end
 d=fileparts(fileName); if(~isempty(d)&&~exist(d,'dir')), mkdir(d); end
 if( multiple ) % add image index to each bb and flatten result
   for i=1:n, bbs{i}=[ones(size(bbs{i},1),1)*i bbs{i}]; end
+  are_empty = cellfun(@(x) ((size(x,1) == 0) || size(x,2)==0),bbs);
+  bbs(are_empty) = [];
+  are_empty = cellfun(@(x) ((size(x,1) == 0) || size(x,2)==0),labels);
+  labels(are_empty) = [];
   bbs=cell2mat(bbs);
+  labels=cell2mat(labels);
 end
 dlmwrite(fileName,bbs); bbs=1;
 
 end
 
-function bbs = acfDetectImg( I, detector )
-
-% JMBUENA: Workaround for BUG in gradientHist with images bigger than 4900 px in either
-% dimension
-sz = size(I);
-old_w = sz(2);
-old_h = sz(1);
-big_image = 0; 
-%big_size = 4900*3900*3; % 4900*3900 pixels x 3 channels ~ 54 MBytes (1 byte/channel)
-%max_size = 4900;
-big_size = 4100*3500*3; % 4100*3500 pixels x 3 channels ~ 41 MBytes (1 byte/channel)
-max_size = 3500;
-if  (prod(sz) > big_size)
-  big_image = 1; 
-  if (old_h == max(sz))
-    new_w = round(max_size * (old_w/old_h));
-    new_h = max_size;
-  else
-    new_h = round(max_size * (old_h/old_w));
-    new_w = max_size;
-  end
-%  I = imResampleMex(I, new_h, new_w, 1);  
-  I = imResample(I, [new_h, new_w]);
-end
-
+function [bbs, labels] = acfDetectImgBadacost( I, detector ) %, aRatio )
 % Run trained sliding-window object detector on given image.
 Ds=detector; if(~iscell(Ds)), Ds={Ds}; end; nDs=length(Ds);
 opts=Ds{1}.opts; pPyramid=opts.pPyramid; pNms=opts.pNms;
@@ -99,25 +82,38 @@ end
 for i=1:P.nScales
   for j=1:nDs, opts=Ds{j}.opts;
     modelDsPad=opts.modelDsPad; modelDs=opts.modelDs;
-    bb = acfDetect1(P.data{i},Ds{j}.clf,shrink,...
-      modelDsPad(1),modelDsPad(2),opts.stride,opts.cascThr);
+    
+    % -- Use (with changed sign) min positive class cost minus negative class cost as score
+    % WARNING: Change to accomodate with theory. We transpose Cprime because acfDetectBadacostTrees1 
+    %          internally transposes the cost matrix that is passed to it and we want that the 
+    %          actual matrix used is Cprime, transpose(transpose(Cprime)) => Cprime (2016/11)
+    clf_aux = Ds{j}.clf;
+    clf_aux.Cprime = clf_aux.Cprime';
+    [bb, labels] = acfDetectBadacostTrees1(P.data{i},clf_aux,shrink,...
+        modelDsPad(1),modelDsPad(2),opts.stride,opts.cascThr);
+    % End WARNING.
+    
     shift=(modelDsPad-modelDs)/2-pad;
     bb(:,1)=(bb(:,1)+shift(2))/P.scaleshw(i,2);
     bb(:,2)=(bb(:,2)+shift(1))/P.scaleshw(i,1);
     bb(:,3)=modelDs(2)/P.scales(i);
     bb(:,4)=modelDs(1)/P.scales(i);
-    if(separate), bb(:,6)=j; end; bbs{i,j}=bb;
-  end
+    bb(:,6)=labels(:);  % We make the label of the subclass the 6th argument.  
+    if(separate), bb(:,7)=j; end; bbs{i,j}=bb;
+  end; 
 end; bbs=cat(1,bbs{:});
-% % JMBUENA: For AFW/AFLW
-% bbs = bbApply('squarify', bbs, 2, 1./1.18);
-if(~isempty(pNms)), bbs=bbNms(bbs,pNms); end
 
-% JMBUENA: AVOID BUG of gradientHist with too big images.
-if (big_image)
-  bbs(:,1) = round(bbs(:,1) * (old_w/new_w));
-  bbs(:,2) = round(bbs(:,2) * (old_h/new_h));
-  bbs(:,3) = round(bbs(:,3) * (old_w/new_w));
-  bbs(:,4) = round(bbs(:,4) * (old_h/new_h));
+if(isfield(Ds{1}.clf, 'aRatio'))
+  % JMBUENA: Change bounding boxes to class specific bounding box. For
+  % example in the KITTI benchmark we have cars. At each orientation the 
+  % bounding box of the car has a specific aspect ratio (a size view of the 
+  % car is rectangular and a frontal car is squared).
+  use_fixed_width = 0;
+  if isfield(Ds{1}.clf, 'aRatioFixedWidth')
+    use_fixed_width = Ds{1}.clf.aRatioFixedWidth;
+  end
+  bbs = correctToClassSpecificBbs(bbs, Ds{1}.clf.aRatio, use_fixed_width, 1); 
 end
+
+if(~isempty(pNms)), bbs=bbNms(bbs,pNms); end
 end

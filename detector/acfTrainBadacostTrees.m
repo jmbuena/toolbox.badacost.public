@@ -1,5 +1,13 @@
-function detector = acfTrain( varargin )
+function detector = acfTrainBadacostTrees( varargin )
 % Train aggregate channel features object detector.
+%
+% -------------------------------------------------------------------------
+%  MODIFIED BY Jose M. Buenaposada
+%  NOTE: Same as P.Dollar's implementation but changing to multiclass
+%  classifiers for detection. For example, the detector can be trained 
+%  taking into account the car orientation. One of the classes is used as 
+%  negative (background).
+% -------------------------------------------------------------------------
 %
 % Train aggregate channel features (ACF) object detector as described in:
 %  P. Doll�r, R. Appel, S. Belongie and P. Perona
@@ -64,22 +72,24 @@ function detector = acfTrain( varargin )
 % 'winsSave' is true cropped windows are saved to disk as a mat file.
 %
 % USAGE
-%  detector = acfTrain( opts )
-%  opts = acfTrain()
+%  detector = acfTrainBadacostTrees.m ( opts )
+%  opts = acfTrainTrainBadacostTrees.m ()
 %
 % INPUTS
 %  opts       - parameters (struct or name/value pairs)
 %   (1) features and model:
+%   .aRatioType - ['mean'] per class computation bb aspect ratio 
+%                 computation (see computePerClassAspectRatios)
+%   .aRatioFixedWidth [0]
 %   .pPyramid   - [{}] params for creating pyramid (see chnsPyramid)
 %   .filters    - [] [wxwxnChnsxnFilter] filters or [wFilter,nFilter]
 %   .modelDs    - [] model height+width without padding (eg [100 41])
 %   .modelDsPad - [] model height+width with padding (eg [128 64])
 %   .pNms       - [..] params for non-maximal suppression (see bbNms.m)
 %   .stride     - [4] spatial stride between detection windows
-%   .cascThr    - [-1] constant cascade threshold (affects speed/accuracy)
-%   .cascCal    - [.005] cascade calibration (affects speed/accuracy)
+%   .cascCal    - [.1] cascade calibration (affects speed/accuracy)
 %   .nWeak      - [128] vector defining number weak clfs per stage
-%   .pBoost     - [..] parameters for boosting (see adaBoostTrain.m)
+%   .pBoost     - [..] parameters for boosting (see badacostTrain.m)
 %   .seed       - [0] seed for random stream (for reproducibility)
 %   .name       - [''] name to prepend to clf and log filenames
 %   (2) training data location and amount:
@@ -96,18 +106,20 @@ function detector = acfTrain( varargin )
 %   .nPerNeg    - [25]  max number of neg windows to sample per image
 %   .nAccNeg    - [10000] max number of neg windows to accumulate
 %   .pJitter    - [{}] params for jittering pos windows (see jitterImage)
+%   (3) save training results:
 %   .winsSave   - [0] if true save cropped windows at each stage to disk
+%   .savePath   - ['.'] path to save results in.
 %
 % OUTPUTS
-%  detector   - trained object detector (modify only via acfModify)
+%  detector   - trained object detector 
 %   .opts       - input parameters used for model training
-%   .clf        - learned boosted tree classifier (see adaBoostTrain)
+%   .clf        - learned boosted tree classifier (see badacostTrain)
 %   .info       - info about channels (see chnsCompute.m)
 %
 % EXAMPLE
 %
-% See also acfReadme, acfDetect, acfDemoInria, acfModify, acfTest,
-% chnsCompute, chnsPyramid, adaBoostTrain, bbGt, bbNms, jitterImage
+% See also acfDetectBadacostTrees, acfTestBadacostTrees, chnsCompute,
+% chnsPyramid, badacostTrain, bbGt, bbNms, jitterImage
 %
 % Piotr's Computer Vision Matlab Toolbox      Version NEW
 % Copyright 2014 Piotr Dollar.  [pdollar-at-gmail.com]
@@ -118,11 +130,11 @@ opts = initializeOpts( varargin{:} );
 if(nargin==0), detector=opts; return; end
 
 % load or initialize detector and begin logging
-nm=[opts.name 'Detector.mat']; t=exist(nm,'file');
+nm=fullfile(opts.savePath, [opts.name 'Detector.mat']); t=exist(nm,'file');
 if(t), if(nargout), t=load(nm); detector=t.detector; end; return; end
 t=fileparts(nm); if(~isempty(t) && ~exist(t,'dir')), mkdir(t); end
 detector = struct( 'opts',opts, 'clf',[], 'info',[] );
-startTrain=clock; nm=[opts.name 'Log.txt'];
+startTrain=clock; nm=fullfile(opts.savePath, [opts.name 'Log.txt']);
 if(exist(nm,'file')), diary(nm); diary('off'); delete(nm); end; diary(nm);
 RandStream.setGlobalStream(RandStream('mrg32k3a','Seed',opts.seed));
 
@@ -133,7 +145,7 @@ for stage = 0:numel(opts.nWeak)-1
   
   % sample positives and compute info about channels
   if( stage==0 )
-    [Is1,IsOrig1] = sampleWins( detector, stage, 1 );
+    [Is1,Ls1,IsOrig1] = sampleWins( detector, stage, 1 );
     t=ndims(Is1); if(t==3), t=Is1(:,:,1); else t=Is1(:,:,:,1); end
     t=chnsCompute(t,opts.pPyramid.pChns); detector.info=t.info;
   end
@@ -163,7 +175,7 @@ for stage = 0:numel(opts.nWeak)-1
   end
   
   % sample negatives and compute features
-  Is0 = sampleWins( detector, stage, 0 );
+  [Is0, ~] = sampleWins( detector, stage, 0 );
   X0 = chnsCompute1( Is0, opts ); clear Is0;
   X0 = reshape(X0,[],size(X0,4))';
   
@@ -174,35 +186,108 @@ for stage = 0:numel(opts.nWeak)-1
     if(n0>0 && n1>0), X0=[X0p; X0]; end %#ok<AGROW>
   end; X0p=X0;
   
-  % train boosted clf
-  detector.opts.pBoost.nWeak = opts.nWeak(stage+1);
-  detector.clf = adaBoostTrain(X0,X1,detector.opts.pBoost);
-  detector.clf.hs = detector.clf.hs + opts.cascCal;
-  
+%   save_file = fullfile(opts.savePath, sprintf('%s_STAGE_%d_NEGATIVE_DATA.mat', opts.name, stage));
+%   if ~exist(save_file, 'file')
+%     save(save_file, 'X0p');
+%   else
+%     load(save_file);
+%   end
+    
+  % train boosted BAdaCost clf and calibrate the cascade threshold.
+  save_file_detector = fullfile(opts.savePath, sprintf('%s_STAGE_%d_Detector.mat', opts.name, stage));
+  if ~exist(save_file_detector, 'file')
+    detector.opts.pBoost = opts.pBoost;
+    detector.opts.pBoost.nWeak = opts.nWeak(stage+1);
+    [detector.clf, cost_curve] = badacostWithTreesTrain(X0, X1, Ls1, detector.opts.pBoost);   
+    
+    % Plot and save cost curve figure
+    h = figure; 
+    plot(cost_curve);
+    xlabel('#weak learners');
+    ylabel('cost');
+    cost_curve_file = fullfile(opts.savePath, sprintf('%s_STAGE_%d_COST_CURVE', opts.name, stage));
+    save([cost_curve_file '.txt'], '-ascii', 'cost_curve');
+    figure(h);
+    saveas(h, [cost_curve_file '.eps'], 'epsc');
+%    saveas(h, [cost_curve_file '.fig'], 'fig');
+   
+%    [detector.opts.cascThr, h_calCascFig] = badacostCalibrateCascade(X0, X1, detector.clf, opts.cascCal);
+    [detector.opts.cascThr, h_calCascFig] = badacostCalibrateCascade(X0, X1, detector.clf);
+    % Watch out!!! This is faster but you can miss detections!!
+%    detector.opts.cascThr=-2;
+
+    % Compute the Training Confusion Matrix:
+    xx = [X0; X1];
+    yy = [ones(1,size(X0,1)), Ls1+1];
+    yy_predicted = badacostWithTreesApply(xx, detector.clf);
+    
+    ConfMatrix = confusionmat(yy, yy_predicted);
+    disp('Confusion Matrix:');
+    disp(ConfMatrix);
+    conf_mat_file = fullfile(opts.savePath, sprintf('%s_STAGE_%d_CONFUSION_MATRIX', opts.name, stage));
+    save([conf_mat_file '.mat'], 'ConfMatrix');
+    save([conf_mat_file '.txt'], '-ascii', 'ConfMatrix');
+    
+    % Plot cascade calibration figure 
+    casc_calib_file = fullfile(opts.savePath, sprintf('%s_STAGE_%d_CASCADE_CALIBRATION', opts.name, stage));
+    figure(h_calCascFig);
+    saveas(h_calCascFig,[casc_calib_file '.eps'], 'epsc');
+%    saveas(h_calCascFig,[casc_calib_file '.fig'], 'fig');
+    
+    % Save trained detector
+    save(save_file_detector, 'detector');
+  else
+    load(save_file_detector);
+    
+    %% Uncomment if you want to recompute the training confusion matrix.
+    % Compute the Training Confusion Matrix:
+    xx = [X0; X1];
+    yy = [ones(1,size(X0,1)), Ls1+1];
+    yy_predicted = badacostWithTreesApply(xx, detector.clf);
+    
+    ConfMatrix = confusionmat(yy, yy_predicted);
+    disp('Confusion Matrix:');
+    disp(ConfMatrix);
+    conf_mat_file = fullfile(opts.savePath, sprintf('%s_STAGE_%d_CONFUSION_MATRIX', opts.name, stage));
+    save([conf_mat_file '.mat'], 'ConfMatrix');
+    save([conf_mat_file '.txt'], '-ascii', 'ConfMatrix');
+  end
+
   % update log
   fprintf('Done training stage %i (time=%.0fs).\n',...
     stage,etime(clock,startStage)); diary('off');
 end
 
+% JMBUENA: Compute the window size for every subclass of the 
+% positive metaclass. We are going to keep this window size
+% within the detector classifier. We will train the detector with
+% fixed big window (selecting the features in this window) but we
+% finally return the "per class" best fit window.
+detector.clf.aRatio = computePerClassAspectRatios(detector.opts.posImgDir, ...
+  detector.opts.posGtDir, detector.opts.pLoad, opts.aRatioType);
+detector.clf.aRatioFixedWidth = opts.aRatioFixedWidth; 
+
 % save detector
-save([opts.name 'Detector.mat'],'detector');
+save(fullfile(opts.savePath, [opts.name 'Detector.mat']),'detector');
 
 % finalize logging
 diary('on'); fprintf([repmat('-',[1 75]) '\n']);
 fprintf('Done training (time=%.0fs).\n',...
   etime(clock,startTrain)); diary('off');
-
 end
 
 function opts = initializeOpts( varargin )
 % Initialize opts struct.
-dfs= { 'pPyramid',{}, 'filters',[], ...
+dfs= {'aRatioType', 'mean', ...
+  'pPyramid',{}, 'filters', [], ...
   'modelDs',[100 41], 'modelDsPad',[128 64], ...
-  'pNms',struct(), 'stride',4, 'cascThr',-1, 'cascCal',.005, ...
-  'nWeak',128, 'pBoost', {}, 'seed',0, 'name','', 'posGtDir','', ...
-  'posImgDir','', 'negImgDir','', 'posWinDir','', 'negWinDir','', ...
+  'pNms',struct(), 'stride',4, 'cascCal',.1, ...
+  'nWeak',128, 'pBoost', {}, 'seed',0, 'name','', ...,
+  'aRatioFixedWidth', 0, ...
+  'posGtDir','', ...
+  'posImgDir','', 'negImgDir','', 'posWinDir','', 'negWinDir','', ... 
   'imreadf',@imread, 'imreadp',{}, 'pLoad',{}, 'nPos',inf, 'nNeg',5000, ...
-  'nPerNeg',25, 'nAccNeg',10000, 'pJitter',{}, 'winsSave',0 };
+  'nPerNeg',25, 'nAccNeg',10000, 'pJitter',{}, 'winsSave', 0, 'savePath', '.'};
 opts = getPrmDflt(varargin,dfs,1);
 % fill in remaining parameters
 p=chnsPyramid([],opts.pPyramid); p=p.pPyramid;
@@ -214,20 +299,22 @@ p.pChns.complete=1; opts.pPyramid=p;
 % initialize pNms, pBoost, pBoost.pTree, and pLoad
 dfs={ 'type','maxg', 'overlap',.65, 'ovrDnm','min' };
 opts.pNms=getPrmDflt(opts.pNms,dfs,-1);
-dfs={ 'pTree',{}, 'nWeak',0, 'discrete',1, 'verbose',16 };
+dfs={ 'Cost',{}, 'stopAtNegWeight', 1, 'shrinkage', {}, 'resampling', {}, 'nWeak',0, ...
+      'minDepth', 1, 'maxDepth', 4, 'verbose', 16, 'quantized', 0, ...
+      'use_rus', 0, 'fracFtrs', 1, ...
+      'variable_depth', 0};    
 opts.pBoost=getPrmDflt(opts.pBoost,dfs,1);
-dfs={'nBins',256,'maxDepth',2,'minWeight',.01,'fracFtrs',1,'nThreads',16};
-opts.pBoost.pTree=getPrmDflt(opts.pBoost.pTree,dfs,1);
+%dfs={'nBins',256,'maxDepth',2,'minWeight',.01,'fracFtrs',1,'nThreads',1e5};
+%opts.pBoost.pTree=getPrmDflt(opts.pBoost.pTree,dfs,1);
 opts.pLoad=getPrmDflt(opts.pLoad,{'squarify',{0,1}},-1);
-% JMBUENA: Removed as done in SubCat 0.2 (actTrain_subcat.m
-% http://cvwee.ucsd.edu/eshed)
-% opts.pLoad.squarify{2}=opts.modelDs(2)/opts.modelDs(1);
+opts.pLoad.squarify{2}=opts.modelDs(2)/opts.modelDs(1);
 end
 
-function [Is,IsOrig] = sampleWins( detector, stage, positive )
+function [Is,Ls,IsOrig] = sampleWins( detector, stage, positive )
 % Load or sample windows for training detector.
 opts=detector.opts; start=clock;
 if( positive ), n=opts.nPos; else n=opts.nNeg; end
+% JMBUENA FIXME! How to deal with positive subclass labels from cropped images?
 if( positive ), crDir=opts.posWinDir; else crDir=opts.negWinDir; end
 if( exist(crDir,'dir') && stage==0 )
   % if window directory is specified simply load windows
@@ -240,45 +327,50 @@ else
   hasGt=positive||isempty(opts.negImgDir); fs={opts.negImgDir};
   if(hasGt), fs={opts.posImgDir,opts.posGtDir}; end
   fs=bbGt('getFiles',fs); nImg=size(fs,2); assert(nImg>0);
-  if(~isinf(n)), fs=fs(:,randperm(nImg)); end; Is=cell(nImg*1000,1);
-  diary('off'); tid=ticStatus('Sampling windows',1,30); k=0; i=0; batch=64;
+  if(~isinf(n)), fs=fs(:,randperm(nImg)); end; 
+  Is=cell(nImg*1000,1); Ls=cell(nImg*1000,1);
+  diary('off'); tid=ticStatus('Sampling windows',1,30); k=0; i=0; batch=64; 
   while( i<nImg && k<n )
-    batch=min(batch,nImg-i); Is1=cell(1,batch);
-    parfor j=1:batch, ij=i+j;
+    batch=min(batch,nImg-i); Is1=cell(1,batch); lbls=cell(1, batch);
+    parfor j=1:batch, ij=i+j; 
       I = feval(opts.imreadf,fs{1,ij},opts.imreadp{:}); %#ok<PFBNS>
-      gt=[]; if(hasGt), [~,gt]=bbGt('bbLoad',fs{2,ij},opts.pLoad); end
-      Is1{j} = sampleWins1( I, gt, detector, stage, positive );
+      gt=[]; objs=[]; if(hasGt), [objs,gt]=bbGt('bbLoad',fs{2,ij},opts.pLoad); end
+      [Is1{j}, lbls{j}]  = sampleWins1( I, objs, gt, detector, stage, positive );
     end
-    Is1=[Is1{:}]; k1=length(Is1); Is(k+1:k+k1)=Is1; k=k+k1;
-    if(k>n), Is=Is(randSample(k,n)); k=n; end
+    Is1=[Is1{:}]; k1=length(Is1); Is(k+1:k+k1)=Is1; 
+    lbls=[lbls{:}]; Ls(k+1:k+k1)=lbls; k=k+k1;
+    if(k>n), inds=randSample(k,n); Is=Is(inds); Ls=Ls(inds); k=n; end
     i=i+batch; tocStatus(tid,max(i/nImg,k/n));
   end
-  Is=Is(1:k); diary('on');
+  Is=Is(1:k); Ls=Ls(1:k); diary('on'); 
   fprintf('Sampled %i windows from %i images.\n',k,i);
 end
 % optionally jitter positive windows
 if(length(Is)<2), Is={}; return; end
-nd=ndims(Is{1})+1; Is=cat(nd,Is{:}); IsOrig=Is;
+nd=ndims(Is{1})+1; Is=cat(nd,Is{:}); Ls=cat(2,Ls{:}); IsOrig=Is;
 if( positive && isstruct(opts.pJitter) )
   opts.pJitter.hasChn=(nd==4); Is=jitterImage(Is,opts.pJitter);
-  ds=size(Is); ds(nd)=ds(nd)*ds(nd+1); Is=reshape(Is,ds(1:nd));
+  ds=size(Is); 
+  Ls=repmat(Ls, [ds(nd),1]);
+  Ls=reshape(Ls,[1,ds(nd)*length(Ls)]);
+  ds(nd)=ds(nd)*ds(nd+1); Is=reshape(Is,ds(1:nd));
 end
 % make sure dims are divisible by shrink and not smaller than modelDsPad
 ds=size(Is); cr=rem(ds(1:2),opts.pPyramid.pChns.shrink); s=floor(cr/2)+1;
 e=ceil(cr/2); Is=Is(s(1):end-e(1),s(2):end-e(2),:,:); ds=size(Is);
 if(any(ds(1:2)<opts.modelDsPad)), error('Windows too small.'); end
 % optionally save windows to disk and update log
-nm=[opts.name 'Is' int2str(positive) 'Stage' int2str(stage)];
+nm=fullfile(opts.savePath, [opts.name 'Is' int2str(positive) 'Stage' int2str(stage)]);
 if( opts.winsSave ), save(nm,'Is','-v7.3'); end
 fprintf('Done sampling windows (time=%.0fs).\n',etime(clock,start));
 diary('off'); diary('on');
 end
 
-function Is = sampleWins1( I, gt, detector, stage, positive )
+function [Is,lbls] = sampleWins1( I, objs, gt, detector, stage, positive )
 % Sample windows from I given its ground truth gt.
 opts=detector.opts; shrink=opts.pPyramid.pChns.shrink;
 modelDs=opts.modelDs; modelDsPad=opts.modelDsPad;
-if( positive ), bbs=gt; bbs=bbs(bbs(:,5)==0,:); else
+if( positive ), bbs=gt; bbs=bbs(gt(:,5)==0,:); objs=objs(gt(:,5)==0,:); else
   if( stage==0 )
     % generate candidate bounding boxes in a grid
     [h,w,~]=size(I); h1=modelDs(1); w1=modelDs(2);
@@ -287,7 +379,7 @@ if( positive ), bbs=gt; bbs=bbs(bbs(:,5)==0,:); else
     bbs=[xs(:) ys(:)]; bbs(:,3)=w1; bbs(:,4)=h1; bbs=bbs(1:n,:);
   else
     % run detector to generate candidate bounding boxes
-    bbs=acfDetect(I,detector); [~,ord]=sort(bbs(:,5),'descend');
+    bbs=acfDetectBadacost(I,detector); [~,ord]=sort(bbs(:,5),'descend');
     bbs=bbs(ord(1:min(end,opts.nPerNeg)),1:4);
   end
   if( ~isempty(gt) )
@@ -295,15 +387,22 @@ if( positive ), bbs=gt; bbs=bbs(bbs(:,5)==0,:); else
     n=size(bbs,1); keep=false(1,n);
     for i=1:n, keep(i)=all(bbGt('compOas',bbs(i,:),gt,gt(:,5))<.1); end
     bbs=bbs(keep,:);
+    objs=[];
   end
 end
 % grow bbs to a large padded size and finally crop windows
 modelDsBig=max(8*shrink,modelDsPad)+max(2,ceil(64/shrink))*shrink;
-% JMBUENA: Removed as done in SubCat 0.2 (acfTrain_subcat.m
-% http://cverr.ucsd.edu/eshed).
-%r=modelDs(2)/modelDs(1); assert(all(abs(bbs(:,3)./bbs(:,4)-r)<1e-5));
+r=modelDs(2)/modelDs(1); assert(all(abs(bbs(:,3)./bbs(:,4)-r)<1e-5));
 r=modelDsBig./modelDs; bbs=bbApply('resize',bbs,r(1),r(2));
 Is=bbApply('crop',I,bbs,'replicate',modelDsBig([2 1]));
+if isempty(Is); lbls=Is; else
+  lbls=cell(1,length(Is));
+  if( positive ) 
+    lbls(:)={objs(:).subclass};
+  else
+    lbls(:)={-1}; 
+  end
+end
 end
 
 function chns = chnsCompute1( Is, opts )
