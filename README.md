@@ -13,6 +13,7 @@ This repo has a modified version of [Piotr Dollar toolbox](http://vision.ucsd.ed
 Our modifications to P.Dollar toolbox have only been tested on GNU/Linux Matlab. To replicate paper experiments you have to:
 
 * Clone this repo
-  * Execute toolboxCompile
+  * From Matlab execute addpath(genpath(PATH_TO_TOOLBOX))
+  * From Matlab execute toolboxCompile
 * Clone the [multi-view car detection scripts repo](https://github.com/jmbuena/toolbox.badacost.kitti.public) and follow instructions there.
 * Clone the [multi-view face detection scripts repo](https://github.com/jmbuena/toolbox.badacost.faces.public) and follow instructions there.
